@@ -696,3 +696,168 @@ if len(df_transaksi) > 0:
     )
 else:
     st.info("Belum ada transaksi.")
+import streamlit as st
+import pandas as pd
+from database import get_connection
+from io import BytesIO
+
+# ==========================
+# CEK LOGIN
+# ==========================
+if "login" not in st.session_state or st.session_state.login == False:
+    st.warning("Silakan login terlebih dahulu.")
+    st.stop()
+
+conn = get_connection()
+user_id = st.session_state.user_id
+
+st.title("📊 Laporan Penjualan")
+
+# ==========================
+# PILIH PERIODE
+# ==========================
+periode = st.selectbox(
+    "Pilih Periode",
+    [
+        "Hari Ini",
+        "7 Hari",
+        "1 Bulan",
+        "1 Tahun"
+    ]
+)
+
+# ==========================
+# QUERY BERDASARKAN PERIODE
+# ==========================
+if periode == "Hari Ini":
+
+    query = """
+    SELECT *
+    FROM transactions
+    WHERE user_id=?
+    AND DATE(tanggal)=DATE('now','localtime')
+    ORDER BY tanggal DESC
+    """
+
+elif periode == "7 Hari":
+
+    query = """
+    SELECT *
+    FROM transactions
+    WHERE user_id=?
+    AND DATE(tanggal)>=DATE('now','-6 day')
+    ORDER BY tanggal DESC
+    """
+
+elif periode == "1 Bulan":
+
+    query = """
+    SELECT *
+    FROM transactions
+    WHERE user_id=?
+    AND DATE(tanggal)>=DATE('now','-1 month')
+    ORDER BY tanggal DESC
+    """
+
+else:
+
+    query = """
+    SELECT *
+    FROM transactions
+    WHERE user_id=?
+    AND DATE(tanggal)>=DATE('now','-1 year')
+    ORDER BY tanggal DESC
+    """
+
+df = pd.read_sql_query(query, conn, params=(user_id,))
+
+# ==========================
+# RINGKASAN
+# ==========================
+jumlah_transaksi = len(df)
+
+if len(df) > 0:
+    total_omzet = int(df["total"].sum())
+else:
+    total_omzet = 0
+
+col1, col2 = st.columns(2)
+
+with col1:
+    st.metric(
+        "Jumlah Transaksi",
+        jumlah_transaksi
+    )
+
+with col2:
+    st.metric(
+        "Total Omzet",
+        f"Rp {total_omzet:,.0f}"
+    )
+
+st.divider()
+
+# ==========================
+# TABEL LAPORAN
+# ==========================
+st.subheader("Daftar Transaksi")
+
+if len(df) > 0:
+
+    df_show = df.copy()
+    df_show.index = range(1, len(df_show)+1)
+
+    st.dataframe(
+        df_show,
+        use_container_width=True
+    )
+
+else:
+    st.info("Belum ada transaksi.")
+
+# ==========================
+# GRAFIK PENJUALAN
+# ==========================
+st.divider()
+st.subheader("Grafik Penjualan")
+
+if len(df) > 0:
+
+    grafik = (
+        df.groupby(df["tanggal"].str[:10])["total"]
+        .sum()
+        .reset_index()
+    )
+
+    grafik.columns = ["Tanggal", "Omzet"]
+
+    st.line_chart(
+        grafik.set_index("Tanggal")
+    )
+
+# ==========================
+# EXPORT EXCEL
+# ==========================
+st.divider()
+
+st.subheader("Export Laporan Excel")
+
+if len(df) > 0:
+
+    output = BytesIO()
+
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df.to_excel(
+            writer,
+            index=False,
+            sheet_name="Laporan"
+        )
+
+    excel_data = output.getvalue()
+
+    st.download_button(
+        label="📥 Download Excel",
+        data=excel_data,
+        file_name="laporan_penjualan.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
