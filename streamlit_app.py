@@ -861,3 +861,197 @@ if len(df) > 0:
         file_name="laporan_penjualan.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+import streamlit as st
+import pandas as pd
+from database import get_connection
+
+# ==========================
+# CEK LOGIN
+# ==========================
+if "login" not in st.session_state or st.session_state.login == False:
+    st.warning("Silakan login terlebih dahulu.")
+    st.stop()
+
+# ==========================
+# CEK ROLE ADMIN
+# ==========================
+if st.session_state.role != "admin":
+    st.error("Halaman ini hanya dapat diakses admin.")
+    st.stop()
+
+conn = get_connection()
+cur = conn.cursor()
+
+st.title("🔐 Panel Admin")
+
+# ==========================
+# STATISTIK SISTEM
+# ==========================
+st.subheader("📈 Statistik Sistem")
+
+# Jumlah user
+cur.execute("""
+SELECT COUNT(*) jumlah_user
+FROM users
+WHERE role='user'
+""")
+jumlah_user = cur.fetchone()["jumlah_user"]
+
+# Total transaksi
+cur.execute("""
+SELECT COUNT(*) total_transaksi
+FROM transactions
+""")
+total_transaksi = cur.fetchone()["total_transaksi"]
+
+# Total omzet
+cur.execute("""
+SELECT COALESCE(SUM(total),0) total_omzet
+FROM transactions
+""")
+total_omzet = cur.fetchone()["total_omzet"]
+
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    st.metric(
+        "Jumlah UMKM",
+        jumlah_user
+    )
+
+with col2:
+    st.metric(
+        "Total Transaksi",
+        total_transaksi
+    )
+
+with col3:
+    st.metric(
+        "Total Omzet",
+        f"Rp {total_omzet:,.0f}"
+    )
+
+st.divider()
+
+# ==========================
+# DAFTAR USER
+# ==========================
+st.subheader("👥 Daftar Pengguna")
+
+query_user = """
+SELECT
+u.id,
+u.username,
+u.role,
+COUNT(t.id) jumlah_transaksi,
+COALESCE(SUM(t.total),0) total_penjualan
+FROM users u
+LEFT JOIN transactions t
+ON u.id=t.user_id
+GROUP BY u.id
+ORDER BY u.username
+"""
+
+df_user = pd.read_sql_query(query_user, conn)
+
+if len(df_user) > 0:
+
+    for index, row in df_user.iterrows():
+
+        with st.expander(
+            f"{row['username']} ({row['role']})"
+        ):
+
+            st.write(
+                "Jumlah Transaksi:",
+                row["jumlah_transaksi"]
+            )
+
+            st.write(
+                "Total Penjualan:",
+                f"Rp {row['total_penjualan']:,.0f}"
+            )
+
+            # admin utama tidak dapat dihapus
+            if row["username"] != "admin":
+
+                if st.button(
+                    f"🗑 Hapus User {row['username']}",
+                    key=row["id"]
+                ):
+
+                    # hapus detail transaksi
+                    cur.execute("""
+                    DELETE FROM transaction_detail
+                    WHERE transaction_id IN (
+                        SELECT id
+                        FROM transactions
+                        WHERE user_id=?
+                    )
+                    """, (row["id"],))
+
+                    # hapus transaksi
+                    cur.execute("""
+                    DELETE FROM transactions
+                    WHERE user_id=?
+                    """, (row["id"],))
+
+                    # hapus produk
+                    cur.execute("""
+                    DELETE FROM products
+                    WHERE user_id=?
+                    """, (row["id"],))
+
+                    # hapus user
+                    cur.execute("""
+                    DELETE FROM users
+                    WHERE id=?
+                    """, (row["id"],))
+
+                    conn.commit()
+
+                    st.success("User berhasil dihapus")
+                    st.rerun()
+
+else:
+    st.info("Belum ada pengguna.")
+
+st.divider()
+
+# ==========================
+# RIWAYAT TRANSAKSI SEMUA USER
+# ==========================
+st.subheader("🧾 Riwayat Transaksi Seluruh Pengguna")
+
+query_transaksi = """
+SELECT
+t.id,
+u.username,
+t.tanggal,
+t.total
+FROM transactions t
+JOIN users u
+ON t.user_id=u.id
+ORDER BY t.tanggal DESC
+LIMIT 100
+"""
+
+df_transaksi = pd.read_sql_query(
+    query_transaksi,
+    conn
+)
+
+if len(df_transaksi) > 0:
+
+    df_transaksi.index = range(
+        1,
+        len(df_transaksi)+1
+    )
+
+    st.dataframe(
+        df_transaksi,
+        use_container_width=True
+    )
+
+else:
+    st.info("Belum ada transaksi.")
