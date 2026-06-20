@@ -68,9 +68,6 @@ except:
 import streamlit as st
 from database import get_connection
 
-conn = get_connection()
-cur = conn.cursor()
-
 st.set_page_config(
     page_title="Kasir UMKM",
     layout="wide"
