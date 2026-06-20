@@ -117,15 +117,37 @@ def register():
     pw = st.text_input("Password Baru", type="password")
 
     if st.button("Daftar"):
-        try:
-            cur.execute(
-                "INSERT INTO users(username,password) VALUES(?,?)",
-                (user,pw)
-            )
-            conn.commit()
-            st.success("Akun berhasil dibuat")
-        except:
-            st.error("Username sudah digunakan")
+
+        if user.strip() == "" or pw.strip() == "":
+            st.error("Username dan password tidak boleh kosong")
+
+        else:
+            try:
+                cur.execute(
+                    "SELECT * FROM users WHERE username=?",
+                    (user,)
+                )
+
+                cek_user = cur.fetchone()
+
+                if cek_user:
+                    st.error("Username sudah digunakan")
+
+                else:
+                    cur.execute(
+                        """
+                        INSERT INTO users(username,password)
+                        VALUES(?,?)
+                        """,
+                        (user, pw)
+                    )
+
+                    conn.commit()
+
+                    st.success("Akun berhasil dibuat, silakan login")
+
+            except Exception as e:
+                st.error(f"Terjadi kesalahan: {e}")
 
 
 if st.session_state.login == False:
