@@ -179,9 +179,6 @@ if "login" not in st.session_state or st.session_state.login == False:
     st.warning("Silakan login terlebih dahulu.")
     st.stop()
 
-conn = get_connection()
-cur = conn.cursor()
-
 user_id = st.session_state.user_id
 
 st.title("📊 Dashboard")
